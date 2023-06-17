@@ -28,7 +28,7 @@ def requires_broadcast(node: onnx.NodeProto) -> bool:
     pass
 
 
-def broadcast():
+def broadcast_binary_operation(a, b) -> tuple[str, str]:
     pass
 
 
@@ -61,12 +61,14 @@ class Constant(Module):
 
 class Add(Module):
     def convert(self) -> str:
+        input_0 = self.reformat_name(self.node.input[0])
+        input_1 = self.reformat_name(self.node.input[1])
         return (
             "struct ggml_tensor *{name} = ggml_add(ctx, {input_0}, {input_1});"
             .format(
                 name=self.reformat_name(self.node.output[0]),
-                input_0=self.reformat_name(self.node.input[0]),
-                input_1=self.reformat_name(self.node.input[1]),
+                input_0=input_0,
+                input_1=input_1,
             )
         )
 
@@ -74,7 +76,7 @@ class Add(Module):
 class Mul(Module):
     def convert(self) -> str:
         return (
-            "struct ggml_tensor *{name} = ggml_mul(ctx, {input_0}, {input_1});"
+            "struct ggml_tensor *{name} = ggml_mul(ctx, {input_0}, ggml_repeat(ctx, {input_1}, {input_0}));"
             .format(
                 name=self.reformat_name(self.node.output[0]),
                 input_0=self.reformat_name(self.node.input[0]),
