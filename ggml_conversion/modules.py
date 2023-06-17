@@ -1,4 +1,5 @@
 import abc
+from dataclasses import dataclass
 
 import numpy as np
 import onnx
@@ -14,6 +15,7 @@ class Module(pydantic.BaseModel, metaclass=abc.ABCMeta):
         arbitrary_types_allowed = True
 
     node: onnx.NodeProto
+    tensors: dict[str, "Tensor"]
     io_names_map: dict[str, str]
 
     def reformat_name(self, name: str) -> str:
@@ -24,17 +26,36 @@ class Module(pydantic.BaseModel, metaclass=abc.ABCMeta):
         pass
 
 
-def requires_broadcast(node: onnx.NodeProto) -> bool:
-    pass
+@dataclass
+class Tensor:
+    name: str
+    shape: tuple[int, ...]
+
+    @property
+    def ndim(self) -> int:
+        return len(self.shape)
 
 
-def broadcast_binary_operation(a, b) -> tuple[str, str]:
-    pass
+def broadcast_binary_operation(a: Tensor, b: Tensor) -> tuple[str, str]:
+    if a.shape == b.shape:
+        return a.name, b.name
+    a_shape = a.shape[-2:]
+    b_shape = b.shape[-2:]
+    if a.ndim != b.ndim:
+        if a.ndim > b.ndim:
+            return a.name, f"ggml_repeat(ctx, {b.name}, {a.name})"
+        return f"ggml_repeat(ctx, {a.name}, {b.name})", b.name
+    if any(i > j for i, j in zip(a_shape, b_shape)):
+        return a.name, f"ggml_repeat(ctx, {b.name}, {a.name})"
+    return f"ggml_repeat(ctx, {a.name}, {b.name})", b.name
 
 
 class Constant(Module):
     def convert(self) -> str:
         data = np.frombuffer(self.node.attribute[0].t.raw_data, dtype=np.float32)
+        shape = tuple(self.node.attribute[0].t.dims)
+        if shape:
+            data = data.reshape(shape)
         ndim = data.ndim
         assert ndim > 0
 
@@ -46,8 +67,6 @@ class Constant(Module):
                     value=data.item(),
                 )
             )
-        raise NotImplementedError
-
         dims = ", ".join(str(dim) for dim in data.shape)
         return (
             "struct ggml_tensor *{name} = ggml_new_tensor_{n}d(ctx, GGML_TYPE_F32, {dims});"
@@ -56,6 +75,7 @@ class Constant(Module):
                 n=ndim,
                 dims=dims,
             )
+            # + "\n    "
         )
 
 
@@ -63,6 +83,9 @@ class Add(Module):
     def convert(self) -> str:
         input_0 = self.reformat_name(self.node.input[0])
         input_1 = self.reformat_name(self.node.input[1])
+        input_0, input_1 = broadcast_binary_operation(
+            self.tensors[input_0], self.tensors[input_1]
+        )
         return (
             "struct ggml_tensor *{name} = ggml_add(ctx, {input_0}, {input_1});"
             .format(

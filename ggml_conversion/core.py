@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Final, Literal
 
 import git
+import numpy as np
 import onnx
 import pydantic
 import torch
@@ -22,13 +23,38 @@ def create_io_name_map(model: onnx.ModelProto) -> dict[str, Literal["input", "ou
     }
 
 
+def get_tensors(model: onnx.ModelProto) -> dict[str, modules.Tensor]:
+    out = {}
+    for init in model.graph.initializer:
+        name = modules.reformat_name(init.name, create_io_name_map(model))
+        shape = tuple(init.dims)
+        out[name] = modules.Tensor(name=name, shape=shape)
+    for inp in model.graph.input:
+        name = modules.reformat_name(inp.name, create_io_name_map(model))
+        shape = tuple(d.dim_value for d in inp.type.tensor_type.shape.dim)
+        out[name] = modules.Tensor(name=name, shape=shape)
+    for node in model.graph.node:
+        if node.op_type != "Constant":
+            continue
+        name = modules.reformat_name(node.output[0], create_io_name_map(model))
+        shape = tuple(node.attribute[0].t.dims)
+        out[name] = modules.Tensor(name=name, shape=shape)
+    return out
+
+
 def generate_forward(model: onnx.ModelProto) -> str:
     io_name_map = create_io_name_map(model)
     mods: list[str] = []
     for node in model.graph.node:
         if node.op_type not in modules.GGML_OPERATORS:
             raise NotImplementedError(f"Operator {node.op_type} is not supported")
-        mods.append(modules.GGML_OPERATORS[node.op_type](node=node, io_names_map=io_name_map).convert())
+        mods.append(
+            modules.GGML_OPERATORS[node.op_type](
+                node=node,
+                tensors=get_tensors(model),
+                io_names_map=io_name_map,
+            ).convert()
+        )
     mods.append(
         "return {};".format(
             modules.reformat_name(
