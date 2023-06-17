@@ -103,7 +103,15 @@ def timestamp():
 @pytest.mark.parametrize(
     "Model", [AddConst, AddMatrix, MatMul, LinearProjection, LinearLayer, MLP]
 )
-def test_model(Model, timestamp):
+def test_model_runs(Model):
+    result = Model()(Model.get_dummy_input_tensor())
+    assert isinstance(result, torch.Tensor)
+
+
+@pytest.mark.parametrize(
+    "Model", [AddConst, AddMatrix, MatMul, LinearProjection, LinearLayer, MLP]
+)
+def test_model_builds(Model, timestamp):
     directory = TEST_DATA_DIR / timestamp / Model.__name__
     directory.mkdir(exist_ok=True, parents=True)
     torch.onnx.export(
