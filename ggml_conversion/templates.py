@@ -11,7 +11,9 @@ struct ggml_tensor * ggml_linear(
     struct ggml_tensor *weight,
     struct ggml_tensor *bias
 ) {{
-    return ggml_add(ctx, ggml_mul_mat(ctx, input, weight), bias);
+    // Wx + b
+    struct ggml_tensor *wx = ggml_mul_mat(ctx, input, weight);
+    return ggml_add(ctx, wx, ggml_repeat(ctx, bias, wx));
 }}
 
 struct ggml_model {{
