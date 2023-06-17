@@ -25,7 +25,7 @@ class AddConst(torch.nn.Module):
 
     @classmethod
     def get_dummy_input_tensor(cls):
-        return torch.randn(3, 10)
+        return torch.ones(3, 10)
 
 
 class AddMatrix(torch.nn.Module):
@@ -38,7 +38,7 @@ class AddMatrix(torch.nn.Module):
 
     @classmethod
     def get_dummy_input_tensor(cls):
-        return torch.randn(5, 5)
+        return torch.ones(5, 5)
 
 
 class MatMul(torch.nn.Module):
@@ -51,7 +51,7 @@ class MatMul(torch.nn.Module):
 
     @classmethod
     def get_dummy_input_tensor(cls):
-        return torch.randn(3, 5)
+        return torch.ones(3, 5)
 
 
 class LinearProjection(torch.nn.Module):
@@ -65,7 +65,7 @@ class LinearProjection(torch.nn.Module):
 
     @classmethod
     def get_dummy_input_tensor(cls):
-        return torch.randn(3, 5)
+        return torch.ones(3, 5)
 
 
 class LinearLayer(torch.nn.Module):
@@ -78,7 +78,7 @@ class LinearLayer(torch.nn.Module):
 
     @classmethod
     def get_dummy_input_tensor(cls):
-        return torch.randn(3, 5)
+        return torch.ones(3, 5)
 
 
 class MLP(torch.nn.Module):
@@ -92,7 +92,7 @@ class MLP(torch.nn.Module):
 
     @classmethod
     def get_dummy_input_tensor(cls):
-        return torch.randn(3, 5)
+        return torch.ones(3, 5)
 
 
 @pytest.fixture(scope="session", autouse=True)
