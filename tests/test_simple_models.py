@@ -44,7 +44,7 @@ class AddMatrix(torch.nn.Module):
 class MatMul(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.w = torch.rand([5, 5])
+        self.w = torch.ones([5, 5])
 
     def forward(self, x):
         return torch.matmul(x, self.w)
@@ -57,8 +57,8 @@ class MatMul(torch.nn.Module):
 class LinearProjection(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.w = torch.rand([5, 5])
-        self.b = torch.rand([5])
+        self.w = torch.ones([5, 5])
+        self.b = torch.ones([5])
 
     def forward(self, x):
         return torch.matmul(x, self.w) + self.b
