@@ -1,0 +1,28 @@
+[tool.poetry]
+name = "ggml-conversion"
+version = "0.1.0"
+description = "Make AlphaFold2 faster"
+authors = ["BenTenmann <benji.tenmann@me.com>"]
+license = "MIT"
+readme = "README.md"
+packages = [{include = "ggml_conversion"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+ivy-core = "==1.1.9"
+jupyterlab = "^4.0.1"
+jax = "^0.4.11"
+jaxlib = "^0.4.11"
+matplotlib = "^3.7.1"
+torchviz = "^0.0.2"
+gitpython = "^3.1.31"
+pydantic = "^1.10.9"
+onnx = "^1.14.0"
+
+
+[tool.poetry.group.dev.dependencies]
+jupyterlab = "^4.0.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
