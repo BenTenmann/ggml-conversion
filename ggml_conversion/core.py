@@ -122,8 +122,8 @@ class Conversion(pydantic.BaseModel):
                 model_init=generate_model_init(model),
                 set_input=generate_set_input(model),
                 mem_size="1024 * 1024 * 1024",
-                dim_1=dim_0,
-                dim_0=dim_1,
+                dim_0=dim_0,
+                dim_1=dim_1,
             ),
             cmakelists=templates.CMAKELISTS.format(
                 model_name=name,
