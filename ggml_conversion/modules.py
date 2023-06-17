@@ -116,3 +116,31 @@ GGML_OPERATORS: dict[str, type[Module]] = {
     "Add": Add,
     "Mul": Mul,
 }
+
+
+def broadcastinfo(
+    a_shape: tuple[int, ...], b_shape: tuple[int, ...]
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    "Get which dimensions are added or repeated when `a` and `b` are broadcast."
+    ndim = max(len(a_shape), len(b_shape))
+
+    add_ndims_to_a = ndim - len(a_shape)
+    add_ndims_to_b = ndim - len(b_shape)
+
+    a_shape_ = np.array([1] * add_ndims_to_a + list(a_shape))
+    b_shape_ = np.array([1] * add_ndims_to_b + list(b_shape))
+
+    if not all((a_shape_ == b_shape_) | (a_shape_ == 1) | (b_shape_ == 1)):
+        raise ValueError(f"could not broadcast shapes {a_shape} {b_shape}")
+
+    a_repeatdims = (a_shape_ == 1) & (b_shape_ > 1)  # the repeated dims
+    a_repeatdims[:add_ndims_to_a] = True  # the added dims
+    a_repeatdims = np.where(a_repeatdims == True)[0]  # indices of axes where True
+    a_repeatdims = [int(i) for i in a_repeatdims]
+
+    b_repeatdims = (b_shape_ == 1) & (a_shape_ > 1)
+    b_repeatdims[:add_ndims_to_b] = True
+    b_repeatdims = np.where(b_repeatdims == True)[0]
+    b_repeatdims = [int(i) for i in b_repeatdims]
+
+    return tuple(a_repeatdims), tuple(b_repeatdims)
