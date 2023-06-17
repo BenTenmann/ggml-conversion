@@ -1,5 +1,7 @@
 # ggml-conversion
 
+![achievement](assets/achievement.png)
+
 ## Description
 
 This repository contains the code for the conversion of PyTorch models to GGML format. The conversion is done using the

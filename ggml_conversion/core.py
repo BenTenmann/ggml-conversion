@@ -33,11 +33,9 @@ def get_tensors(model: onnx.ModelProto) -> dict[str, modules.Tensor]:
         name = modules.reformat_name(inp.name, create_io_name_map(model))
         shape = tuple(d.dim_value for d in inp.type.tensor_type.shape.dim)
         out[name] = modules.Tensor(name=name, shape=shape)
-    for node in model.graph.node:
-        if node.op_type != "Constant":
-            continue
-        name = modules.reformat_name(node.output[0], create_io_name_map(model))
-        shape = tuple(node.attribute[0].t.dims)
+    for value in onnx.shape_inference.infer_shapes(model).graph.value_info:
+        name = modules.reformat_name(value.name, create_io_name_map(model))
+        shape = tuple(d.dim_value for d in value.type.tensor_type.shape.dim)
         out[name] = modules.Tensor(name=name, shape=shape)
     return out
 

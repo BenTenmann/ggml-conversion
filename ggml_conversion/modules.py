@@ -42,9 +42,13 @@ def broadcast_binary_operation(a: Tensor, b: Tensor) -> tuple[str, str]:
     a_shape = a.shape[-2:]
     b_shape = b.shape[-2:]
     if a.ndim != b.ndim:
+        dim_diff = abs(a.ndim - b.ndim)
+        min_shape = b_shape if a.ndim > b.ndim else a_shape
+        dims = ', '.join(str(dim) for dim in (1,) * dim_diff + min_shape)
         if a.ndim > b.ndim:
-            return a.name, f"ggml_repeat(ctx, {b.name}, {a.name})"
-        return f"ggml_repeat(ctx, {a.name}, {b.name})", b.name
+            # TODO: check if this is correct
+            return a.name, f"ggml_repeat(ctx, ggml_reshape_{a.ndim}d(ctx, {b.name}, {dims}), {a.name})"
+        return f"ggml_repeat(ctx, ggml_reshape_{b.ndim}d(ctx, {a.name}, {dims}), {b.name})", b.name
     if any(i > j for i, j in zip(a_shape, b_shape)):
         return a.name, f"ggml_repeat(ctx, {b.name}, {a.name})"
     return f"ggml_repeat(ctx, {a.name}, {b.name})", b.name
@@ -53,11 +57,11 @@ def broadcast_binary_operation(a: Tensor, b: Tensor) -> tuple[str, str]:
 def create_load_tensor_data_statement(name: str, data: bytes) -> str:
     return (
         f"""
-        std::vector<unsigned char> bytes = {{
+        std::vector<unsigned char> {name}_data = {{
             {", ".join(str(b) for b in data)}
         }};
         """
-        + "std::memcpy({name}->data, bytes.data(), ggml_nbytes({name}));"
+        + "std::memcpy({name}->data, {name}_data.data(), ggml_nbytes({name}));"
         .format(
             name=name,
             data=data,
