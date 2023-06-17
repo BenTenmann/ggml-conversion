@@ -11,4 +11,4 @@ clean:
 	rm -rf $(DIR) || true
 
 test:
-	$(PYTHON) scripts/test.py $(DIR)
+	$(PYTHON) -m pytest -vv tests

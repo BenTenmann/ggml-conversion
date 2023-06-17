@@ -2,12 +2,17 @@ import subprocess
 import sys
 from pathlib import Path
 import pytest
+import time
 
 import onnx
 import torch
 import torch.onnx
 
 from ggml_conversion import core
+
+TEST_DATA_DIR = Path(__file__).parents[1] / "test_data"
+TEST_DATA_DIR.mkdir(exist_ok=True)
+(TEST_DATA_DIR / ".gitignore").write_text("*\n")
 
 
 class AddConst(torch.nn.Module):
@@ -90,11 +95,16 @@ class MLP(torch.nn.Module):
         return torch.randn(3, 5)
 
 
+@pytest.fixture(scope="session", autouse=True)
+def timestamp():
+    yield time.strftime("%Y%m%d-%H%M%S")
+
+
 @pytest.mark.parametrize(
-    "model", [AddConst, AddMatrix, MatMul, LinearProjection, LinearLayer, MLP]
+    "Model", [AddConst, AddMatrix, MatMul, LinearProjection, LinearLayer, MLP]
 )
-def test_model(Model):
-    directory = Path(sys.argv[1]) / Model.__name__
+def test_model(Model, timestamp):
+    directory = TEST_DATA_DIR / timestamp / Model.__name__
     directory.mkdir(exist_ok=True, parents=True)
     torch.onnx.export(
         Model(),
