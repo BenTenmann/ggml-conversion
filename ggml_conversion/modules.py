@@ -50,6 +50,12 @@ def broadcast_binary_operation(a: Tensor, b: Tensor) -> tuple[str, str]:
     return f"ggml_repeat(ctx, {a.name}, {b.name})", b.name
 
 
+def create_load_tensor_data_statement(name: str, data: bytes) -> str:
+    return (
+        "static const uint8_t {name}_data[] = {{ {data} }};\n"
+    )
+
+
 class Constant(Module):
     def convert(self) -> str:
         data = np.frombuffer(self.node.attribute[0].t.raw_data, dtype=np.float32)
@@ -75,7 +81,6 @@ class Constant(Module):
                 n=ndim,
                 dims=dims,
             )
-            # + "\n    "
         )
 
 

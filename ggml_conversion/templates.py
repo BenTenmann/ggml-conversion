@@ -1,6 +1,9 @@
 from typing import Final
 
-MAIN: Final[str] = """#include "ggml/ggml.h"
+MAIN: Final[str] = """#include <stdio.h>
+#include <vector>
+
+#include "ggml/ggml.h"
 
 #include "common.h"
 #include "common-ggml.h"
