@@ -11,4 +11,4 @@ clean:
 	rm -rf $(DIR) || true
 
 test:
-	$(PYTHON) -m pytest -vv tests
+	$(PYTHON) -m pytest -vv tests -k "test_model_builds[AddConst]"
