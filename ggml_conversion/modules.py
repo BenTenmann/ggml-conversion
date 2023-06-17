@@ -52,7 +52,16 @@ def broadcast_binary_operation(a: Tensor, b: Tensor) -> tuple[str, str]:
 
 def create_load_tensor_data_statement(name: str, data: bytes) -> str:
     return (
-        "static const uint8_t {name}_data[] = {{ {data} }};\n"
+        f"""
+        std::vector<unsigned char> bytes = {{
+            {", ".join(str(b) for b in data)}
+        }};
+        """
+        + "std::memcpy({name}->data, bytes.data(), ggml_nbytes({name}));"
+        .format(
+            name=name,
+            data=data,
+        )
     )
 
 
@@ -80,6 +89,10 @@ class Constant(Module):
                 name=self.reformat_name(self.node.output[0]),
                 n=ndim,
                 dims=dims,
+            )
+            + create_load_tensor_data_statement(
+                self.reformat_name(self.node.output[0]),
+                data.tobytes(),
             )
         )
 

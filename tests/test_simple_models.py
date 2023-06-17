@@ -31,7 +31,7 @@ class AddConst(torch.nn.Module):
 class AddMatrix(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.w = torch.rand([5, 5])
+        self.w = torch.ones([5, 5]) * 5
 
     def forward(self, x):
         return x + self.w
