@@ -118,6 +118,23 @@ class Add(Module):
         )
 
 
+class Sub(Module):
+    def convert(self) -> str:
+        input_0 = self.reformat_name(self.node.input[0])
+        input_1 = self.reformat_name(self.node.input[1])
+        input_0, input_1 = broadcast_binary_operation(
+            self.tensors[input_0], self.tensors[input_1]
+        )
+        return (
+            "struct ggml_tensor *{name} = ggml_sub(ctx, {input_0}, {input_1});"
+            .format(
+                name=self.reformat_name(self.node.output[0]),
+                input_0=input_0,
+                input_1=input_1,
+            )
+        )
+
+
 class Mul(Module):
     def convert(self) -> str:
         input_0 = self.reformat_name(self.node.input[0])
@@ -126,11 +143,59 @@ class Mul(Module):
             self.tensors[input_0], self.tensors[input_1]
         )
         return (
-            "struct ggml_tensor *{name} = ggml_mul(ctx, {input_0}, ggml_repeat(ctx, {input_1}, {input_0}));"
+            "struct ggml_tensor *{name} = ggml_mul(ctx, {input_0}, {input_1});"
             .format(
                 name=self.reformat_name(self.node.output[0]),
                 input_0=input_0,
                 input_1=input_1,
+            )
+        )
+
+
+class Div(Module):
+    def convert(self) -> str:
+        input_0 = self.reformat_name(self.node.input[0])
+        input_1 = self.reformat_name(self.node.input[1])
+        input_0, input_1 = broadcast_binary_operation(
+            self.tensors[input_0], self.tensors[input_1]
+        )
+        return (
+            "struct ggml_tensor *{name} = ggml_div(ctx, {input_0}, {input_1});"
+            .format(
+                name=self.reformat_name(self.node.output[0]),
+                input_0=input_0,
+                input_1=input_1,
+            )
+        )
+
+
+class Pow(Module):
+    # TODO: check if this is correct
+    # not sure if there is `ggml_pow` function
+    def convert(self) -> str:
+        input_0 = self.reformat_name(self.node.input[0])
+        input_1 = self.reformat_name(self.node.input[1])
+        input_0, input_1 = broadcast_binary_operation(
+            self.tensors[input_0], self.tensors[input_1]
+        )
+        return (
+            "struct ggml_tensor *{name} = ggml_pow(ctx, {input_0}, {input_1});"
+            .format(
+                name=self.reformat_name(self.node.output[0]),
+                input_0=input_0,
+                input_1=input_1,
+            )
+        )
+
+
+class Sqrt(Module):
+    def convert(self) -> str:
+        input_0 = self.reformat_name(self.node.input[0])
+        return (
+            "struct ggml_tensor *{name} = ggml_sqrt(ctx, {input_0});"
+            .format(
+                name=self.reformat_name(self.node.output[0]),
+                input_0=input_0,
             )
         )
 
@@ -177,12 +242,39 @@ class ReLU(Module):
         )
 
 
+class Softmax(Module):
+    def convert(self) -> str:
+        return (
+            "struct ggml_tensor *{name} = ggml_soft_max(ctx, {input});"
+            .format(
+                name=self.reformat_name(self.node.output[0]),
+                input=self.reformat_name(self.node.input[0]),
+            )
+        )
+
+
+class Tanh(Module):
+    def convert(self) -> str:
+        return (
+            "struct ggml_tensor *{name} = ggml_tanh(ctx, {input});"
+            .format(
+                name=self.reformat_name(self.node.output[0]),
+                input=self.reformat_name(self.node.input[0]),
+            )
+        )
+
+
 GGML_OPERATORS: dict[str, type[Module]] = {
     "Gemm": Linear,
     "Relu": ReLU,
     "Constant": Constant,
     "Add": Add,
+    "Sub": Sub,
     "Mul": Mul,
+    "Div": Div,
+    # "Pow": Pow,
+    "Sqrt": Sqrt,
+    "Softmax": Softmax,
     "MatMul": MatMul,
 }
 

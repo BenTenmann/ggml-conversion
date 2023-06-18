@@ -28,6 +28,19 @@ class AddConst(torch.nn.Module):
         return torch.ones(3, 10)
 
 
+class MulConst(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.w = 5
+
+    def forward(self, x):
+        return x * self.w
+
+    @classmethod
+    def get_dummy_input_tensor(cls):
+        return torch.ones(3, 10)
+
+
 class AddMatrix(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -35,6 +48,33 @@ class AddMatrix(torch.nn.Module):
 
     def forward(self, x):
         return x + self.w
+
+    @classmethod
+    def get_dummy_input_tensor(cls):
+        return torch.ones(5, 5)
+
+
+class MulMatrix(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.w = torch.ones([5, 5]) * 5
+
+    def forward(self, x):
+        return x * self.w
+
+    @classmethod
+    def get_dummy_input_tensor(cls):
+        return torch.ones(5, 5)
+
+
+class Arithmetic(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.w = torch.ones([5, 5]) * 5
+        self.b = torch.ones([5])
+
+    def forward(self, x):
+        return x * self.w + self.w - self.b
 
     @classmethod
     def get_dummy_input_tensor(cls):
@@ -95,13 +135,28 @@ class MLP(torch.nn.Module):
         return torch.ones(3, 5)
 
 
+class MLP2(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.layer1 = torch.nn.Linear(5, 5)
+        self.layer2 = torch.nn.Linear(5, 5)
+        self.activation = torch.nn.ReLU()
+
+    def forward(self, x):
+        return self.activation(self.layer2(self.activation(self.layer1(x))))
+
+    @classmethod
+    def get_dummy_input_tensor(cls):
+        return torch.ones(3, 5)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def timestamp():
     yield time.strftime("%Y%m%d-%H%M%S")
 
 
 @pytest.mark.parametrize(
-    "Model", [AddConst, AddMatrix, MatMul, LinearProjection, LinearLayer, MLP]
+    "Model", [AddConst, MulConst, AddMatrix, MulMatrix, Arithmetic, MatMul, LinearProjection, LinearLayer, MLP, MLP2]
 )
 def test_model_runs(Model):
     result = Model()(Model.get_dummy_input_tensor())
@@ -109,7 +164,7 @@ def test_model_runs(Model):
 
 
 @pytest.mark.parametrize(
-    "Model", [AddConst, AddMatrix, MatMul, LinearProjection, LinearLayer, MLP]
+    "Model", [AddConst, MulConst, AddMatrix, MulMatrix, Arithmetic, MatMul, LinearProjection, LinearLayer, MLP, MLP2]
 )
 def test_model_builds(Model, timestamp):
     directory = TEST_DATA_DIR / timestamp / Model.__name__
