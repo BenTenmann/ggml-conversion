@@ -3,10 +3,15 @@ from typing import Final
 MAIN: Final[str] = """#include <stdio.h>
 #include <vector>
 
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+
 #include "ggml/ggml.h"
 
 #include "common.h"
 #include "common-ggml.h"
+
+namespace py = pybind11;
 
 struct ggml_tensor * ggml_linear(
     struct ggml_context *ctx,
@@ -23,28 +28,65 @@ struct ggml_model {{
     {model_struct}
 }};
 
-struct ggml_tensor * forward(struct ggml_context *ctx, struct ggml_tensor *input, struct ggml_model *model) {{
+void ggml_set_f32_2d(struct ggml_tensor *tensor, int i, int j, float value) {{
+    *(float *) ((char *) tensor->data + i*tensor->nb[0] + j*tensor->nb[1]) = value;
+}}
+
+void ggml_set_f32_3d(struct ggml_tensor *tensor, int i, int j, int k, float value) {{
+    *(float *) ((char *) tensor->data + i*tensor->nb[0] + j*tensor->nb[1] + k*tensor->nb[2]) = value;
+}}
+
+void ggml_set_f32_4d(struct ggml_tensor *tensor, int i, int j, int k, int l, float value) {{
+    *(float *) ((char *) tensor->data + i*tensor->nb[0] + j*tensor->nb[1] + k*tensor->nb[2] + l*tensor->nb[3]) = value;
+}}
+
+struct ggml_tensor * model_forward(struct ggml_context *ctx, struct ggml_tensor *input, struct ggml_model *model) {{
     {forward}
 }}
 
-int main() {{
-    struct ggml_init_params p = {{
-        .mem_size = {mem_size},
-        .mem_buffer = NULL,
-    }};
-    struct ggml_context *ctx = ggml_init(p);
-
-    struct ggml_tensor *input = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, {dim_0}, {dim_1});
-    struct ggml_model model = {{
-        {model_init}
-    }};
-    struct ggml_tensor *output = forward(ctx, input, &model);
-    struct ggml_cgraph graph = ggml_build_forward(output);
-
+struct ggml_tensor * set_input(struct ggml_context *ctx, const {input_type}& input) {{
     {set_input}
+}}
 
-    ggml_graph_compute(ctx, &graph);
-    printf("output = %f\\n", ggml_get_f32_1d(output, 0));
+{output_type} get_output(struct ggml_tensor *output) {{
+    {get_output}
+}}
+
+class Model {{
+public:
+    Model() {{
+        struct ggml_init_params p = {{
+            .mem_size = {mem_size},
+            .mem_buffer = NULL,
+        }};
+        ctx = ggml_init(p);
+        model = {{
+            {model_init}
+        }};
+    }}
+
+    void set_weights({input_args}) {{
+        {set_weights}
+    }}
+
+    {output_type} forward(const {input_type}& input) {{
+        struct ggml_tensor *input_tensor = set_input(ctx, input);
+        struct ggml_tensor *output = model_forward(ctx, input_tensor, &model);
+        struct ggml_cgraph graph = ggml_build_forward(output);
+        ggml_graph_compute(ctx, &graph);
+        return get_output(output);
+    }}
+
+private:
+    struct ggml_context *ctx;
+    struct ggml_model model;
+}};
+
+PYBIND11_MODULE({model_name}, m) {{
+    py::class_<Model>(m, "Model")
+        .def(py::init<>())
+        .def("set_weights", &Model::set_weights)
+        .def("forward", &Model::forward);
 }}
 """
 
@@ -59,8 +101,9 @@ set(CMAKE_C_STANDARD   11)
 set(CMAKE_CXX_STANDARD 11)
 
 add_subdirectory(ggml)
+add_subdirectory(pybind11)
 
-add_executable(${{PROJECT_NAME}} main.cpp)
+pybind11_add_module(${{PROJECT_NAME}} main.cpp)
 target_include_directories(${{PROJECT_NAME}} PUBLIC ggml/include ggml/examples)
-target_link_libraries(${{PROJECT_NAME}} PRIVATE ggml)
+target_link_libraries(${{PROJECT_NAME}} PRIVATE ggml pybind11::module)
 """
