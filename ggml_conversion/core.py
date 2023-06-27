@@ -42,6 +42,10 @@ def get_tensors(model: onnx.ModelProto) -> dict[str, modules.Tensor]:
         name = modules.reformat_name(value.name, create_io_name_map(model))
         shape = tuple(d.dim_value for d in value.type.tensor_type.shape.dim)
         out[name] = modules.Tensor(name=name, shape=shape)
+    for output in model.graph.output:
+        name = modules.reformat_name(output.name, create_io_name_map(model))
+        shape = tuple(d.dim_value for d in output.type.tensor_type.shape.dim)
+        out[name] = modules.Tensor(name=name, shape=shape)
     return out
 
 

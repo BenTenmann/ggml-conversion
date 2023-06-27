@@ -2,8 +2,6 @@ from pathlib import Path
 import pytest
 import time
 
-import inflection
-import onnx
 import torch
 import torch.onnx
 
