@@ -65,6 +65,10 @@ public:
         }};
     }}
 
+    ~{camel_case_model_name}() {{
+        ggml_free(ctx);
+    }}
+
     std::array<size_t, {output_ndim}> output_shape() {{
         return {{ {output_shape} }};
     }}
