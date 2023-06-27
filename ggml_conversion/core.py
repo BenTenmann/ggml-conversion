@@ -1,8 +1,10 @@
 import collections
 import importlib
+import math
 import platform
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Final, Literal
@@ -17,6 +19,10 @@ from ggml_conversion import modules, templates
 
 GGML_REPO: Final[str] = "https://github.com/ggerganov/ggml.git"
 PYBIND11_REPO: Final[str] = "https://github.com/pybind/pybind11.git"
+FLOAT_BYTES: Final[int] = 4
+
+# not sure if this is correct (taken from https://github.com/ggerganov/ggml/blob/master/examples/gpt-2/main.cpp#L194)
+OBJECT_OVERHEAD: Final[int] = 512
 
 
 def create_io_name_map(model: onnx.ModelProto) -> dict[str, Literal["input", "output"]]:
@@ -99,6 +105,15 @@ def generate_model_init(model: onnx.ModelProto) -> str:
     )
 
 
+def generate_model_mem_size(model: onnx.ModelProto) -> str:
+    return str(
+        sum(
+            FLOAT_BYTES * math.prod(init.dims) + OBJECT_OVERHEAD
+            for init in model.graph.initializer
+        )
+    )
+
+
 def generate_input_tensor(model: onnx.ModelProto) -> str:
     value = model.graph.input[0]
     return "ggml_new_tensor_{ndim}d(ctx, GGML_TYPE_F32, {shape})".format(
@@ -119,7 +134,14 @@ def generate_set_weights(model: onnx.ModelProto) -> str:
 
 class GGMLModel:
     def __init__(self, model_path: str, model_name: str):
-        self.model = getattr(importlib.import_module(model_path), model_name)()
+        # since we are importing the module, if we try to build another model of the same name
+        # in the same runtime, it will not update the model
+        # this is because Python caches imports
+        if model_path in sys.modules:
+            module = importlib.reload(sys.modules[model_path])
+        else:
+            module = importlib.import_module(model_path)
+        self.model = getattr(module, model_name)()
         self.model_name = model_name
 
     def set_weights(self, weights: collections.OrderedDict[str, torch.Tensor]) -> None:
@@ -166,7 +188,8 @@ class Conversion(pydantic.BaseModel):
                 forward=generate_forward(model),
                 model_init=generate_model_init(model),
                 input_tensor=generate_input_tensor(model),
-                mem_size="1024 * 1024 * 1024",
+                model_mem_size=generate_model_mem_size(model),
+                eval_mem_size="1024 * 1024 * 1024",
                 set_weights=generate_set_weights(model),
                 model_name=name,
                 output_shape=", ".join(str(d.dim_value) for d in model.graph.output[0].type.tensor_type.shape.dim),
@@ -206,5 +229,7 @@ def run_ggml_converter(
             str(directory.relative_to(Path.cwd()) / conversion.name).replace("/", "."),
             model_name=torch_model.__class__.__name__,
         )
+        # TODO: fix this
+        # it seems to sometimes SEGFAULT, when we build the same model twice
         ggml_model.set_weights(torch_model.state_dict())
     return ggml_model

@@ -56,8 +56,9 @@ class {camel_case_model_name} {{
 public:
     {camel_case_model_name}() {{
         struct ggml_init_params p = {{
-            .mem_size = {mem_size},
+            .mem_size = {model_mem_size},
             .mem_buffer = NULL,
+            .no_alloc = false,
         }};
         ctx = ggml_init(p);
         model = {{
@@ -78,11 +79,18 @@ public:
     }}
 
     std::vector<float> forward(const std::vector<float>& input) {{
-        struct ggml_tensor *input_tensor = set_input(ctx, input);
-        struct ggml_tensor *output = model_forward(ctx, input_tensor, &model);
+        struct ggml_init_params p = {{
+            .mem_size = {eval_mem_size},
+            .mem_buffer = NULL,
+        }};
+        struct ggml_context *ctx0 = ggml_init(p);
+        struct ggml_tensor *input_tensor = set_input(ctx0, input);
+        struct ggml_tensor *output = model_forward(ctx0, input_tensor, &model);
         struct ggml_cgraph graph = ggml_build_forward(output);
-        ggml_graph_compute(ctx, &graph);
-        return get_output(output);
+        ggml_graph_compute(ctx0, &graph);
+        const auto result = get_output(output);
+        ggml_free(ctx0);
+        return result;
     }}
 
 private:
