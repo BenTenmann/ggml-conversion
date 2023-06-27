@@ -25,3 +25,28 @@ To run the tests, run:
 ```bash
 make clean test
 ```
+
+## Roadmap
+
+Module implementations (to get to BERT):
+
+- [x] Add
+- [x] Constant
+- [ ] ConstantOfShape
+- [x] Div
+- [ ] Equal
+- [ ] Erf
+- [ ] Expand
+- [ ] Gather
+- [x] Gemm
+- [x] MatMul
+- [x] Mul
+- [ ] Pow
+- [ ] ReduceMean
+- [ ] Reshape
+- [x] Softmax
+- [x] Sqrt
+- [x] Sub
+- [ ] Tanh
+- [ ] Transpose
+- [ ] Where
