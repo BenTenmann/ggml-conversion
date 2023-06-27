@@ -3,10 +3,15 @@ from typing import Final
 MAIN: Final[str] = """#include <stdio.h>
 #include <vector>
 
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+
 #include "ggml/ggml.h"
 
 #include "common.h"
 #include "common-ggml.h"
+
+namespace py = pybind11;
 
 struct ggml_tensor * ggml_linear(
     struct ggml_context *ctx,
@@ -15,36 +20,78 @@ struct ggml_tensor * ggml_linear(
     struct ggml_tensor *bias
 ) {{
     // Wx + b
-    struct ggml_tensor *wx = ggml_mul_mat(ctx, ggml_cont(ctx, ggml_transpose(ctx, input)), weight);
-    return ggml_add(ctx, wx, ggml_repeat(ctx, wx, ggml_repeat(ctx, ggml_reshape_2d(ctx, bias, 1, bias->ne[0]), wx)));
+    struct ggml_tensor *wx = ggml_cont(ctx, ggml_transpose(ctx, ggml_mul_mat(ctx, input, weight)));
+    return ggml_add(ctx, wx, ggml_repeat(ctx, ggml_reshape_2d(ctx, bias, bias->ne[0], 1), wx));
 }}
 
 struct ggml_model {{
     {model_struct}
 }};
 
-struct ggml_tensor * forward(struct ggml_context *ctx, struct ggml_tensor *input, struct ggml_model *model) {{
+struct ggml_tensor * model_forward(struct ggml_context *ctx, struct ggml_tensor *input, struct ggml_model *model) {{
     {forward}
 }}
 
-int main() {{
-    struct ggml_init_params p = {{
-        .mem_size = {mem_size},
-        .mem_buffer = NULL,
-    }};
-    struct ggml_context *ctx = ggml_init(p);
+void set_tensor(struct ggml_tensor *tensor, const std::vector<float>& data) {{
+    std::memcpy(tensor->data, (char *) data.data(), ggml_nbytes(tensor));
+}}
 
-    struct ggml_tensor *input = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, {dim_0}, {dim_1});
-    struct ggml_model model = {{
-        {model_init}
-    }};
-    struct ggml_tensor *output = forward(ctx, input, &model);
-    struct ggml_cgraph graph = ggml_build_forward(output);
+struct ggml_tensor * set_input(struct ggml_context *ctx, const std::vector<float>& input) {{
+    struct ggml_tensor *input_tensor = {input_tensor};
+    set_tensor(input_tensor, input);
+    return input_tensor;
+}}
 
-    {set_input}
+int64_t ggml_tensor_size(struct ggml_tensor *tensor) {{
+    return tensor->ne[0] * tensor->ne[1] * tensor->ne[2] * tensor->ne[3];
+}}
 
-    ggml_graph_compute(ctx, &graph);
-    printf("output = %f\\n", ggml_get_f32_1d(output, 0));
+std::vector<float> get_output(struct ggml_tensor *output) {{
+    std::vector<float> result(ggml_tensor_size(output));
+    std::memcpy(result.data(), (char *) output->data, ggml_nbytes(output));
+    return result;
+}}
+
+class {camel_case_model_name} {{
+public:
+    {camel_case_model_name}() {{
+        struct ggml_init_params p = {{
+            .mem_size = {mem_size},
+            .mem_buffer = NULL,
+        }};
+        ctx = ggml_init(p);
+        model = {{
+            {model_init}
+        }};
+    }}
+
+    std::array<size_t, {output_ndim}> output_shape() {{
+        return {{ {output_shape} }};
+    }}
+
+    void set_weights(std::map<std::string, std::vector<float>> weights) {{
+        {set_weights}
+    }}
+
+    std::vector<float> forward(const std::vector<float>& input) {{
+        struct ggml_tensor *input_tensor = set_input(ctx, input);
+        struct ggml_tensor *output = model_forward(ctx, input_tensor, &model);
+        struct ggml_cgraph graph = ggml_build_forward(output);
+        ggml_graph_compute(ctx, &graph);
+        return get_output(output);
+    }}
+
+private:
+    struct ggml_context *ctx;
+    struct ggml_model model;
+}};
+
+PYBIND11_MODULE({model_name}, m) {{
+    py::class_<{camel_case_model_name}>(m, "{camel_case_model_name}")
+        .def(py::init<>())
+        .def("output_shape", &{camel_case_model_name}::output_shape)
+        .def("set_weights", &{camel_case_model_name}::set_weights)
+        .def("forward", &{camel_case_model_name}::forward);
 }}
 """
 
@@ -59,8 +106,9 @@ set(CMAKE_C_STANDARD   11)
 set(CMAKE_CXX_STANDARD 11)
 
 add_subdirectory(ggml)
+add_subdirectory(pybind11)
 
-add_executable(${{PROJECT_NAME}} main.cpp)
+pybind11_add_module(${{PROJECT_NAME}} main.cpp)
 target_include_directories(${{PROJECT_NAME}} PUBLIC ggml/include ggml/examples)
-target_link_libraries(${{PROJECT_NAME}} PRIVATE ggml)
+target_link_libraries(${{PROJECT_NAME}} PRIVATE ggml pybind11::module)
 """

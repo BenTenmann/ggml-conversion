@@ -18,6 +18,8 @@ torchviz = "^0.0.2"
 gitpython = "^3.1.31"
 pydantic = "^1.10.9"
 onnx = "^1.14.0"
+pybind11 = "^2.10.4"
+inflection = "^0.5.1"
 
 
 [tool.poetry.group.dev.dependencies]
