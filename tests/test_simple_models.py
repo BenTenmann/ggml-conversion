@@ -1,9 +1,8 @@
-import subprocess
-import sys
 from pathlib import Path
 import pytest
 import time
 
+import inflection
 import onnx
 import torch
 import torch.onnx
@@ -25,7 +24,7 @@ class AddConst(torch.nn.Module):
 
     @classmethod
     def get_dummy_input_tensor(cls):
-        return torch.ones(3, 10)
+        return torch.randn(3, 10)
 
 
 class MulConst(torch.nn.Module):
@@ -38,20 +37,20 @@ class MulConst(torch.nn.Module):
 
     @classmethod
     def get_dummy_input_tensor(cls):
-        return torch.ones(3, 10)
+        return torch.randn(3, 10)
 
 
 class AddMatrix(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.w = torch.ones([5, 5]) * 5
+        self.w = torch.randn([5, 5]) * 5
 
     def forward(self, x):
         return x + self.w
 
     @classmethod
     def get_dummy_input_tensor(cls):
-        return torch.ones(5, 5)
+        return torch.randn(5, 5)
 
 
 class MulMatrix(torch.nn.Module):
@@ -64,7 +63,7 @@ class MulMatrix(torch.nn.Module):
 
     @classmethod
     def get_dummy_input_tensor(cls):
-        return torch.ones(5, 5)
+        return torch.randn(5, 5)
 
 
 class Arithmetic(torch.nn.Module):
@@ -78,7 +77,7 @@ class Arithmetic(torch.nn.Module):
 
     @classmethod
     def get_dummy_input_tensor(cls):
-        return torch.ones(5, 5)
+        return torch.randn(5, 5)
 
 
 class MatMul(torch.nn.Module):
@@ -91,7 +90,7 @@ class MatMul(torch.nn.Module):
 
     @classmethod
     def get_dummy_input_tensor(cls):
-        return torch.ones(3, 5)
+        return torch.randn(3, 5)
 
 
 class LinearProjection(torch.nn.Module):
@@ -105,7 +104,7 @@ class LinearProjection(torch.nn.Module):
 
     @classmethod
     def get_dummy_input_tensor(cls):
-        return torch.ones(3, 5)
+        return torch.randn(3, 5)
 
 
 class LinearLayer(torch.nn.Module):
@@ -118,13 +117,13 @@ class LinearLayer(torch.nn.Module):
 
     @classmethod
     def get_dummy_input_tensor(cls):
-        return torch.ones(3, 5)
+        return torch.randn(3, 5)
 
 
 class MLP(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.layer = torch.nn.Linear(5, 5)
+        self.layer = torch.nn.Linear(5, 2)
         self.activation = torch.nn.ReLU()
 
     def forward(self, x):
@@ -132,7 +131,7 @@ class MLP(torch.nn.Module):
 
     @classmethod
     def get_dummy_input_tensor(cls):
-        return torch.ones(3, 5)
+        return torch.randn(3, 5)
 
 
 class MLP2(torch.nn.Module):
@@ -147,7 +146,7 @@ class MLP2(torch.nn.Module):
 
     @classmethod
     def get_dummy_input_tensor(cls):
-        return torch.ones(3, 5)
+        return torch.randn(3, 5)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -155,26 +154,34 @@ def timestamp():
     yield time.strftime("%Y%m%d-%H%M%S")
 
 
-@pytest.mark.parametrize(
-    "Model", [AddConst, MulConst, AddMatrix, MulMatrix, Arithmetic, MatMul, LinearProjection, LinearLayer, MLP, MLP2]
-)
+MODELS = [
+    AddConst,
+    MulConst,
+    AddMatrix,
+    MulMatrix,
+    Arithmetic,
+    MatMul,
+    LinearProjection,
+    LinearLayer,
+    MLP,
+    MLP2,
+]
+
+
+@pytest.mark.parametrize("Model", MODELS)
 def test_model_runs(Model):
     result = Model()(Model.get_dummy_input_tensor())
     assert isinstance(result, torch.Tensor)
 
 
-@pytest.mark.parametrize(
-    "Model", [AddConst, MulConst, AddMatrix, MulMatrix, Arithmetic, MatMul, LinearProjection, LinearLayer, MLP, MLP2]
-)
+@pytest.mark.parametrize("Model", MODELS)
 def test_model_builds(Model, timestamp):
     directory = TEST_DATA_DIR / timestamp / Model.__name__
     directory.mkdir(exist_ok=True, parents=True)
-    torch.onnx.export(
-        Model(),
-        Model.get_dummy_input_tensor(),
-        str(directory / "model.onnx"),
-    )
-    model = onnx.load(str(directory / "model.onnx"))
-    conversion = core.Conversion.from_onnx_model(model)
-    conversion.build(directory)
-    subprocess.run([directory / "build" / conversion.name], check=True)
+    X = Model.get_dummy_input_tensor()
+    torch_model = Model()
+    ggml_model = core.run_ggml_converter(torch_model, (X,), directory)
+
+    torch_result = torch_model(X)
+    ggml_result = ggml_model(X)
+    assert torch.allclose(torch_result, ggml_result, atol=1e-6)

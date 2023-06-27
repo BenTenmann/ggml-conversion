@@ -20,41 +20,41 @@ struct ggml_tensor * ggml_linear(
     struct ggml_tensor *bias
 ) {{
     // Wx + b
-    struct ggml_tensor *wx = ggml_mul_mat(ctx, ggml_cont(ctx, ggml_transpose(ctx, input)), weight);
-    return ggml_add(ctx, wx, ggml_repeat(ctx, wx, ggml_repeat(ctx, ggml_reshape_2d(ctx, bias, 1, bias->ne[0]), wx)));
+    struct ggml_tensor *wx = ggml_cont(ctx, ggml_transpose(ctx, ggml_mul_mat(ctx, input, weight)));
+    return ggml_add(ctx, wx, ggml_repeat(ctx, ggml_reshape_2d(ctx, bias, bias->ne[0], 1), wx));
 }}
 
 struct ggml_model {{
     {model_struct}
 }};
 
-void ggml_set_f32_2d(struct ggml_tensor *tensor, int i, int j, float value) {{
-    *(float *) ((char *) tensor->data + i*tensor->nb[0] + j*tensor->nb[1]) = value;
-}}
-
-void ggml_set_f32_3d(struct ggml_tensor *tensor, int i, int j, int k, float value) {{
-    *(float *) ((char *) tensor->data + i*tensor->nb[0] + j*tensor->nb[1] + k*tensor->nb[2]) = value;
-}}
-
-void ggml_set_f32_4d(struct ggml_tensor *tensor, int i, int j, int k, int l, float value) {{
-    *(float *) ((char *) tensor->data + i*tensor->nb[0] + j*tensor->nb[1] + k*tensor->nb[2] + l*tensor->nb[3]) = value;
-}}
-
 struct ggml_tensor * model_forward(struct ggml_context *ctx, struct ggml_tensor *input, struct ggml_model *model) {{
     {forward}
 }}
 
-struct ggml_tensor * set_input(struct ggml_context *ctx, const {input_type}& input) {{
-    {set_input}
+void set_tensor(struct ggml_tensor *tensor, const std::vector<float>& data) {{
+    std::memcpy(tensor->data, (char *) data.data(), ggml_nbytes(tensor));
 }}
 
-{output_type} get_output(struct ggml_tensor *output) {{
-    {get_output}
+struct ggml_tensor * set_input(struct ggml_context *ctx, const std::vector<float>& input) {{
+    struct ggml_tensor *input_tensor = {input_tensor};
+    set_tensor(input_tensor, input);
+    return input_tensor;
 }}
 
-class Model {{
+int64_t ggml_tensor_size(struct ggml_tensor *tensor) {{
+    return tensor->ne[0] * tensor->ne[1] * tensor->ne[2] * tensor->ne[3];
+}}
+
+std::vector<float> get_output(struct ggml_tensor *output) {{
+    std::vector<float> result(ggml_tensor_size(output));
+    std::memcpy(result.data(), (char *) output->data, ggml_nbytes(output));
+    return result;
+}}
+
+class {camel_case_model_name} {{
 public:
-    Model() {{
+    {camel_case_model_name}() {{
         struct ggml_init_params p = {{
             .mem_size = {mem_size},
             .mem_buffer = NULL,
@@ -65,11 +65,15 @@ public:
         }};
     }}
 
-    void set_weights({input_args}) {{
+    std::array<size_t, {output_ndim}> output_shape() {{
+        return {{ {output_shape} }};
+    }}
+
+    void set_weights(std::map<std::string, std::vector<float>> weights) {{
         {set_weights}
     }}
 
-    {output_type} forward(const {input_type}& input) {{
+    std::vector<float> forward(const std::vector<float>& input) {{
         struct ggml_tensor *input_tensor = set_input(ctx, input);
         struct ggml_tensor *output = model_forward(ctx, input_tensor, &model);
         struct ggml_cgraph graph = ggml_build_forward(output);
@@ -83,10 +87,11 @@ private:
 }};
 
 PYBIND11_MODULE({model_name}, m) {{
-    py::class_<Model>(m, "Model")
+    py::class_<{camel_case_model_name}>(m, "{camel_case_model_name}")
         .def(py::init<>())
-        .def("set_weights", &Model::set_weights)
-        .def("forward", &Model::forward);
+        .def("output_shape", &{camel_case_model_name}::output_shape)
+        .def("set_weights", &{camel_case_model_name}::set_weights)
+        .def("forward", &{camel_case_model_name}::forward);
 }}
 """
 

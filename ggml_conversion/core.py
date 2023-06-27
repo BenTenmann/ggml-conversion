@@ -1,10 +1,14 @@
+import collections
 import importlib
+import platform
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 from typing import Final, Literal
 
 import git
+import inflection
 import onnx
 import pydantic
 import torch
@@ -85,134 +89,42 @@ def generate_model_init(model: onnx.ModelProto) -> str:
         ".{name} = ggml_new_tensor_{n}d(ctx, GGML_TYPE_F32, {dims}),".format(
             name=modules.reformat_name(name, io_names_map=create_io_name_map(model)),
             n=len(dims),
-            dims=", ".join(str(d) for d in dims)
+            dims=", ".join(str(d) for d in list(dims)[::-1])
         )
         for name, dims in zip(weights, dimension)
     )
 
 
-def _generate_array_type(value: onnx.ValueInfoProto) -> str:
-    arr_template = "std::array<{type}, {size}>"
-    arr = arr_template
-    for d in list(value.type.tensor_type.shape.dim)[:-1]:
-        arr = arr.format(
-            type=arr_template,
-            size=d.dim_value
-        )
-    arr = arr.format(
-        type="float",
-        size=list(value.type.tensor_type.shape.dim)[-1].dim_value
-    )
-    return arr
-
-
-def generate_input_type(model: onnx.ModelProto) -> str:
-    inp = model.graph.input[0]
-    return _generate_array_type(inp)
-
-
-def generate_output_type(model: onnx.ModelProto) -> str:
-    out = model.graph.output[0]
-    return _generate_array_type(out)
-
-
-def _generate_nested_for_loop_with_value_setting(
-    value: onnx.ValueInfoProto,
-    input_name: str,
-    output_name: str,
-) -> str:
-    for_loop_template = "for (int {idx} = 0; {idx} < {size}; {idx}++) {body}"
-    for_loop = for_loop_template
-    indices = ("i", "j", "k", "l")[:len(list(value.type.tensor_type.shape.dim))]
-    for idx, d in zip(indices, list(value.type.tensor_type.shape.dim)[:-1]):
-        for_loop = for_loop.format(
-            size=d.dim_value,
-            body=for_loop_template,
-            idx=idx,
-        )
-    for_loop = for_loop.format(
-        size=list(value.type.tensor_type.shape.dim)[-1].dim_value,
-        body="ggml_set_f32_{ndim}d({output_name}, {indices}, {input_name}{idx});".format(
-            output_name=output_name,
-            input_name=input_name,
-            ndim=len(indices),
-            indices=", ".join(map(str, indices)),
-            idx="".join(f"[{idx}]" for idx in indices)
-        ),
-        idx=indices[-1],
-    )
-    return for_loop
-
-
-def generate_set_input(model: onnx.ModelProto) -> str:
+def generate_input_tensor(model: onnx.ModelProto) -> str:
     value = model.graph.input[0]
-    return "\n    ".join(
-        [
-            "struct ggml_tensor *{output_name} = ggml_new_tensor_{ndim}d(ctx, GGML_TYPE_F32, {shape});".format(
-                output_name="output",
-                ndim=len(list(value.type.tensor_type.shape.dim)),
-                shape=", ".join(str(d.dim_value) for d in value.type.tensor_type.shape.dim),
-            ),
-            _generate_nested_for_loop_with_value_setting(
-                value=value,
-                input_name="input",
-                output_name="output",
-            ),
-            "return output;"
-        ]
+    return "ggml_new_tensor_{ndim}d(ctx, GGML_TYPE_F32, {shape})".format(
+        ndim=len(list(value.type.tensor_type.shape.dim)),
+        shape=", ".join(str(d.dim_value) for d in list(value.type.tensor_type.shape.dim)[::-1]),
     )
-
-
-def generate_get_output(model: onnx.ModelProto) -> str:
-    value = model.graph.output[0]
-    return "\n    ".join(
-        [
-            "{output_type} {input_name} = {{}};".format(
-                input_name="input",
-                output_type=generate_input_type(model),
-            ),
-            _generate_nested_for_loop_with_value_setting(
-                value=value,
-                input_name="input",
-                output_name="output",
-            ),
-            "return input;"
-        ]
-    )
-
-
-def generate_weights_type(value: onnx.ValueInfoProto) -> str:
-    return "int"
 
 
 def generate_set_weights(model: onnx.ModelProto) -> str:
     return "\n    ".join(
-        _generate_nested_for_loop_with_value_setting(
-            value=init,
-            input_name=modules.reformat_name(init.name, create_io_name_map(model)),
-            output_name="model->{}".format(
-                modules.reformat_name(init.name, create_io_name_map(model))
-            ),
+        "set_tensor(model.{name}, weights[\"{unformatted_name}\"]);".format(
+            name=modules.reformat_name(init.name, create_io_name_map(model)),
+            unformatted_name=init.name,
         )
         for init in model.graph.initializer
     )
 
 
-def get_input_shape(model: onnx.ModelProto) -> tuple[int, int]:
-    return (
-        model.graph.input[0].type.tensor_type.shape.dim[0].dim_value,
-        model.graph.input[0].type.tensor_type.shape.dim[1].dim_value
-    )
-
-
 class GGMLModel:
-    def __init__(self, model_path: str, model_weights: dict[str, torch.Tensor]):
-        self.model = importlib.import_module(model_path).Model()
+    def __init__(self, model_path: str, model_name: str):
+        self.model = getattr(importlib.import_module(model_path), model_name)()
+        self.model_name = model_name
+
+    def set_weights(self, weights: collections.OrderedDict[str, torch.Tensor]) -> None:
+        self.model.set_weights({k: v.ravel().tolist() for k, v in weights.items()})
 
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
         return torch.tensor(
-            self.model.forward(x.tolist()), dtype=x.dtype, device=x.device
-        )
+            self.model.forward(x.ravel().tolist()), dtype=x.dtype, device=x.device
+        ).view(*self.model.output_shape())
 
 
 class Conversion(pydantic.BaseModel):
@@ -241,37 +153,54 @@ class Conversion(pydantic.BaseModel):
         subprocess.run(["make"], cwd=build_dir)
 
     @classmethod
-    def from_onnx_model(cls, model: onnx.ModelProto) -> "Conversion":
-        name = modules.reformat_name(model.graph.name, create_io_name_map(model))
+    def from_onnx_model(cls, model: onnx.ModelProto, model_name: str) -> "Conversion":
+        name = inflection.underscore(model_name)
         return cls(
             name=name,
             main=templates.MAIN.format(
                 model_struct=generate_model_struct(model),
                 forward=generate_forward(model),
                 model_init=generate_model_init(model),
-                input_type=generate_input_type(model),
-                output_type=generate_output_type(model),
-                set_input=generate_set_input(model),
-                get_output=generate_get_output(model),
+                input_tensor=generate_input_tensor(model),
                 mem_size="1024 * 1024 * 1024",
-                weights_type=generate_weights_type(model),
                 set_weights=generate_set_weights(model),
                 model_name=name,
-
+                output_shape=", ".join(str(d.dim_value) for d in model.graph.output[0].type.tensor_type.shape.dim),
+                output_ndim=len(model.graph.output[0].type.tensor_type.shape.dim),
+                camel_case_model_name=model_name
             ),
             cmakelists=templates.CMAKELISTS.format(
                 model_name=name,
             ),
         )
 
+    @property
+    def binary_name(self) -> str:
+        version = "".join(platform.python_version_tuple()[:2])
+        return f"{self.name}.{platform.python_implementation()}-{version}-{platform.system()}.so".lower()
+
 
 def run_ggml_converter(
-    model: torch.nn.Module,
+    torch_model: torch.nn.Module,
     args: tuple[torch.Tensor, ...],
+    save_dir: Path | str | None = None,
 ) -> GGMLModel:
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
-        torch.onnx.export(model, args, str(tmpdir / "model.onnx"))
-        model = onnx.load(str(tmpdir / "model.onnx"))
-        conversion = Conversion.from_onnx_model(model)
+        torch.onnx.export(torch_model, args, str(tmpdir / "model.onnx"))
+        onnx_model = onnx.load(str(tmpdir / "model.onnx"))
+        conversion = Conversion.from_onnx_model(onnx_model, model_name=torch_model.__class__.__name__)
         conversion.build(tmpdir)
+
+        directory = Path(save_dir or "conversion").resolve() / conversion.name
+        directory.mkdir(exist_ok=True, parents=True)
+        shutil.copy(
+            str(tmpdir / "build" / conversion.binary_name),
+            str(directory / conversion.binary_name)
+        )
+        ggml_model = GGMLModel(
+            str(directory.relative_to(Path.cwd()) / conversion.name).replace("/", "."),
+            model_name=torch_model.__class__.__name__,
+        )
+        ggml_model.set_weights(torch_model.state_dict())
+    return ggml_model
