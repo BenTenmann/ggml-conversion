@@ -62,11 +62,11 @@ def broadcast_binary_operation(a: Tensor, b: Tensor) -> tuple[str, str]:
 def create_load_tensor_data_statement(name: str, data: bytes) -> str:
     return (
         f"""
-        std::vector<unsigned char> {name}_data = {{
+        constexpr unsigned char {name}_data[] = {{
             {", ".join(str(b) for b in data)}
         }};
         """
-        + "std::memcpy({name}->data, {name}_data.data(), ggml_nbytes({name}));"
+        + "std::memcpy({name}->data, {name}_data, ggml_nbytes({name}));"
         .format(
             name=name,
             data=data,
