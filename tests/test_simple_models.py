@@ -178,7 +178,7 @@ def test_model_builds(Model, timestamp):
     directory.mkdir(exist_ok=True, parents=True)
     X = Model.get_dummy_input_tensor()
     torch_model = Model()
-    ggml_model = core.run_ggml_converter(torch_model, (X,), directory)
+    ggml_model = core.convert(torch_model, (X,), directory)
 
     torch_result = torch_model(X)
     ggml_result = ggml_model(X)

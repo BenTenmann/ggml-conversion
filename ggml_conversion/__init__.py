@@ -1,6 +1,6 @@
-from ggml_conversion.core import GGMLModel, run_ggml_converter
+from ggml_conversion.core import GGMLModel, convert
 
 __all__ = [
     "GGMLModel",
-    "run_ggml_converter",
+    "convert",
 ]

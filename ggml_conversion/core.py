@@ -207,7 +207,7 @@ class Conversion(pydantic.BaseModel):
         return f"{self.name}.{platform.python_implementation()}-{version}-{platform.system()}.so".lower()
 
 
-def run_ggml_converter(
+def convert(
     torch_model: torch.nn.Module,
     args: tuple[torch.Tensor, ...],
     save_dir: Path | str | None = None,
@@ -243,7 +243,7 @@ def run_ggml_converter(
         >>>
         >>> net = Net()
         >>> X = torch.randn(100, 256)
-        >>> ggml_model = ggml.run_ggml_converter(net, (X,))
+        >>> ggml_model = ggml.convert(net, (X,))
         >>> torch.testing.assert_allclose(net(X), ggml_model(X))
     """
     with tempfile.TemporaryDirectory() as tmpdir:
