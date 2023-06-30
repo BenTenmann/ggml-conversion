@@ -32,7 +32,7 @@ struct ggml_tensor * model_forward(struct ggml_context *ctx, struct ggml_tensor 
     {forward}
 }}
 
-void set_tensor(struct ggml_tensor *tensor, const std::vector<float>& data) {{
+inline void set_tensor(struct ggml_tensor *tensor, const std::vector<float>& data) {{
     std::memcpy(tensor->data, (char *) data.data(), ggml_nbytes(tensor));
 }}
 
