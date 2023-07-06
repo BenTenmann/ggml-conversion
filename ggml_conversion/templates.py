@@ -4,12 +4,15 @@ MAIN: Final[str] = """#include <stdio.h>
 #include <vector>
 
 #include <pybind11/pybind11.h>
-#include <pybind11/stl.h>
+#include <pybind11/stl_bind.h>
 
 #include "ggml/ggml.h"
 
 #include "common.h"
 #include "common-ggml.h"
+
+PYBIND11_MAKE_OPAQUE(std::vector<float>);
+PYBIND11_MAKE_OPAQUE(std::map<std::string, std::vector<float>>);
 
 namespace py = pybind11;
 
@@ -32,8 +35,8 @@ struct ggml_tensor * model_forward(struct ggml_context *ctx, struct ggml_tensor 
     {forward}
 }}
 
-inline void set_tensor(struct ggml_tensor *tensor, const std::vector<float>& data) {{
-    std::memcpy(tensor->data, (char *) data.data(), ggml_nbytes(tensor));
+void set_tensor(struct ggml_tensor *tensor, const std::vector<float>& data) {{
+    std::memcpy(tensor->data, data.data(), ggml_nbytes(tensor));
 }}
 
 struct ggml_tensor * set_input(struct ggml_context *ctx, const std::vector<float>& input) {{
@@ -48,7 +51,7 @@ int64_t ggml_tensor_size(struct ggml_tensor *tensor) {{
 
 std::vector<float> get_output(struct ggml_tensor *output) {{
     std::vector<float> result(ggml_tensor_size(output));
-    std::memcpy(result.data(), (char *) output->data, ggml_nbytes(output));
+    std::memcpy(result.data(), output->data, ggml_nbytes(output));
     return result;
 }}
 
@@ -70,11 +73,12 @@ public:
         ggml_free(ctx);
     }}
 
-    std::array<size_t, {output_ndim}> output_shape() {{
-        return {{ {output_shape} }};
+    py::tuple output_shape() {{
+        const auto shape = std::make_tuple({output_shape});
+        return py::cast(shape);
     }}
 
-    void set_weights(std::map<std::string, std::vector<float>> weights) {{
+    void set_weights(std::map<std::string, std::vector<float>>& weights) {{
         {set_weights}
     }}
 
@@ -104,6 +108,8 @@ PYBIND11_MODULE({model_name}, m) {{
         .def("output_shape", &{camel_case_model_name}::output_shape)
         .def("set_weights", &{camel_case_model_name}::set_weights)
         .def("forward", &{camel_case_model_name}::forward);
+    py::bind_vector<std::vector<float>>(m, "FloatVector");
+    py::bind_map<std::map<std::string, std::vector<float>>>(m, "FloatMap");
 }}
 """
 

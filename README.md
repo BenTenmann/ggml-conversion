@@ -35,18 +35,18 @@ Module implementations (to get to BERT):
 - [ ] ConstantOfShape
 - [x] Div
 - [ ] Equal
-- [ ] Erf
+- [x] Erf
 - [ ] Expand
 - [ ] Gather
 - [x] Gemm
 - [x] MatMul
 - [x] Mul
-- [ ] Pow
+- [x] Pow
 - [ ] ReduceMean
-- [ ] Reshape
+- [x] Reshape
 - [x] Softmax
 - [x] Sqrt
 - [x] Sub
-- [ ] Tanh
-- [ ] Transpose
+- [x] Tanh
+- [x] Transpose
 - [ ] Where

@@ -1,9 +1,30 @@
 import abc
 from dataclasses import dataclass
+from typing import Final
 
 import numpy as np
 import onnx
 import pydantic
+
+ONNX_DATA_TYPE_MAP: Final[dict[int, np.dtype]] = {
+    1: np.float32,
+    2: np.uint8,
+    3: np.int8,
+    4: np.uint16,
+    5: np.int16,
+    6: np.int32,
+    7: np.int64,
+    8: str,       # String
+    9: object,    # Object
+    10: np.bool_,     # Boolean
+    11: np.float16,
+    12: np.double,
+    13: np.uint32,
+    14: np.uint64,
+    15: np.complex64,
+    16: np.complex128,
+    17: np.float16,  # Float16Alt
+}
 
 
 def reformat_name(name: str, io_names_map: dict[str, str]) -> str:
@@ -15,6 +36,7 @@ class Module(pydantic.BaseModel, metaclass=abc.ABCMeta):
         arbitrary_types_allowed = True
 
     node: onnx.NodeProto
+    graph: onnx.GraphProto
     tensors: dict[str, "Tensor"]
     io_names_map: dict[str, str]
 
@@ -24,6 +46,12 @@ class Module(pydantic.BaseModel, metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def convert(self) -> str:
         pass
+
+    def get_node(self, node_name: str) -> onnx.NodeProto:
+        for node in self.graph.node:
+            if node.name == node_name:
+                return node
+        raise ValueError(f"Node {node_name} not found in graph")
 
 
 @dataclass
@@ -39,6 +67,10 @@ class Tensor:
     def ggml_shape(self) -> tuple[int, ...]:
         # ggml uses row-major order
         return self.shape[::-1]
+
+    @property
+    def n_elements(self) -> int:
+        return int(np.prod(self.shape))
 
 
 def broadcast_binary_operation(a: Tensor, b: Tensor) -> tuple[str, str]:
@@ -74,9 +106,13 @@ def create_load_tensor_data_statement(name: str, data: bytes) -> str:
     )
 
 
+def decode_tensor_data(node: onnx.NodeProto) -> np.ndarray:
+    return np.frombuffer(node.attribute[0].t.raw_data, dtype=ONNX_DATA_TYPE_MAP[node.attribute[0].t.data_type])
+
+
 class Constant(Module):
     def convert(self) -> str:
-        data = np.frombuffer(self.node.attribute[0].t.raw_data, dtype=np.float32)
+        data = decode_tensor_data(self.node)
         shape = tuple(self.node.attribute[0].t.dims)
         if shape:
             data = data.reshape(shape)
@@ -102,6 +138,27 @@ class Constant(Module):
             + create_load_tensor_data_statement(
                 self.reformat_name(self.node.output[0]),
                 data.tobytes(),
+            )
+        )
+
+
+class ConstantOfShape(Module):
+    def convert(self) -> str:
+        data = decode_tensor_data(self.node)
+        assert len(data) == 1, "Only scalar values are supported"
+
+        constant_node = self.get_node(self.node.input[0].replace("_output_0", ""))
+        shape: tuple[int, ...] = tuple(decode_tensor_data(constant_node))[::-1]
+        return (
+            "struct ggml_tensor *{name} = ggml_new_tensor_{n}d(ctx, GGML_TYPE_F32, {dims});"
+            .format(
+                name=self.reformat_name(self.node.output[0]),
+                n=len(shape),
+                dims=", ".join(str(dim) for dim in shape),
+            )
+            + "ggml_set_f32({name}, {value});".format(
+                    name=self.reformat_name(self.node.output[0]),
+                    value=data.item(),
             )
         )
 
@@ -269,16 +326,82 @@ class Tanh(Module):
         )
 
 
+class Log(Module):
+    def convert(self) -> str:
+        return (
+            "struct ggml_tensor *{name} = ggml_log(ctx, {input});"
+            .format(
+                name=self.reformat_name(self.node.output[0]),
+                input=self.reformat_name(self.node.input[0]),
+            )
+        )
+
+
+class Transpose(Module):
+    def convert(self) -> str:
+        return (
+            "struct ggml_tensor *{name} = ggml_cont(ctx, ggml_transpose(ctx, {input}));"
+            .format(
+                name=self.reformat_name(self.node.output[0]),
+                input=self.reformat_name(self.node.input[0]),
+            )
+        )
+
+
+class Erf(Module):
+    def convert(self) -> str:
+        return (
+            "struct ggml_tensor *{name} = ggml_erf(ctx, {input});"
+            .format(
+                name=self.reformat_name(self.node.output[0]),
+                input=self.reformat_name(self.node.input[0]),
+            )
+        )
+
+
+class Reshape(Module):
+    def convert(self) -> str:
+        input_name = self.reformat_name(self.node.input[0])
+
+        shape_name = self.reformat_name(self.node.input[1])
+        shape_tensor = self.tensors[shape_name]
+
+        constant_node = self.get_node(self.node.input[1].replace("_output_0", ""))
+        reshape_tuple: tuple[int, ...] = tuple(decode_tensor_data(constant_node))[::-1]
+        if any(i == -1 for i in reshape_tuple):
+            input_tensor = self.tensors[input_name]
+            # taking the negative, as there is exactly one -1 in reshape_tuple
+            inferred_dim = - int(input_tensor.n_elements / np.prod(reshape_tuple))
+            reshape_tuple = tuple(
+                inferred_dim if i == -1 else i for i in reshape_tuple
+            )
+        return (
+            "struct ggml_tensor *{name} = ggml_reshape_{n}d(ctx, {input}, {shape});"
+            .format(
+                n=shape_tensor.ndim,
+                name=self.reformat_name(self.node.output[0]),
+                input=input_name,
+                shape=", ".join(str(i) for i in reshape_tuple),
+            )
+        )
+
+
 GGML_OPERATORS: dict[str, type[Module]] = {
     "Gemm": Linear,
     "Relu": ReLU,
     "Constant": Constant,
+    "ConstantOfShape": ConstantOfShape,
     "Add": Add,
     "Sub": Sub,
     "Mul": Mul,
     "Div": Div,
-    # "Pow": Pow,
+    "Pow": Pow,
     "Sqrt": Sqrt,
     "Softmax": Softmax,
     "MatMul": MatMul,
+    "Tanh": Tanh,
+    "Log": Log,
+    "Transpose": Transpose,
+    "Erf": Erf,
+    "Reshape": Reshape,
 }

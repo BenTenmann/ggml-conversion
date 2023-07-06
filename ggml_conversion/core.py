@@ -1,5 +1,6 @@
 import collections
 import importlib
+import logging
 import math
 import platform
 import shutil
@@ -15,10 +16,20 @@ import onnx
 import pydantic
 import torch
 
-from ggml_conversion import modules, templates
+from ggml_conversion import modules, templates, utils
 
-GGML_REPO: Final[str] = "https://github.com/ggerganov/ggml.git"
+LOGGER: Final[logging.Logger] = utils.get_logger(__name__)
+
+Dependency = Literal["ggml", "pybind11"]
+
+GGML_REPO: Final[str] = "https://github.com/BenTenmann/ggml.git"
 PYBIND11_REPO: Final[str] = "https://github.com/pybind/pybind11.git"
+REPOS: Final[dict[Dependency, str]] = {
+    "ggml": GGML_REPO,
+    "pybind11": PYBIND11_REPO,
+}
+CACHE_DIR: Final[Path] = Path.home() / ".cache" / "ggml-conversion"
+
 FLOAT_BYTES: Final[int] = 4
 
 # not sure if this is correct (taken from https://github.com/ggerganov/ggml/blob/master/examples/gpt-2/main.cpp#L194)
@@ -28,10 +39,12 @@ OBJECT_OVERHEAD: Final[int] = 512
 def create_io_name_map(model: onnx.ModelProto) -> dict[str, Literal["input", "output"]]:
     # TODO: handle multiple inputs and outputs
     # input and output names are often not allowed in C
-    return {
-        model.graph.input[0].name: "input",
-        model.graph.output[0].name: "output",
-    }
+    mapping: dict[str, Literal["input", "output"]] = {}
+    if len(model.graph.input) > 0:
+        mapping[model.graph.input[0].name] = "input"
+    if len(model.graph.output) > 0:
+        mapping[model.graph.output[0].name] = "output"
+    return mapping
 
 
 def get_tensors(model: onnx.ModelProto) -> dict[str, modules.Tensor]:
@@ -64,6 +77,7 @@ def generate_forward(model: onnx.ModelProto) -> str:
         mods.append(
             modules.GGML_OPERATORS[node.op_type](
                 node=node,
+                graph=model.graph,
                 tensors=get_tensors(model),
                 io_names_map=io_name_map,
             ).convert()
@@ -115,6 +129,8 @@ def generate_model_mem_size(model: onnx.ModelProto) -> str:
 
 
 def generate_input_tensor(model: onnx.ModelProto) -> str:
+    if len(model.graph.input) != 1:
+        raise NotImplementedError("Only models with one input are supported")
     value = model.graph.input[0]
     return "ggml_new_tensor_{ndim}d(ctx, GGML_TYPE_F32, {shape})".format(
         ndim=len(list(value.type.tensor_type.shape.dim)),
@@ -141,16 +157,39 @@ class GGMLModel:
             module = importlib.reload(sys.modules[model_path])
         else:
             module = importlib.import_module(model_path)
+        self._module = module
         self.model = getattr(module, model_name)()
         self.model_name = model_name
 
     def set_weights(self, weights: collections.OrderedDict[str, torch.Tensor]) -> None:
-        self.model.set_weights({k: v.ravel().tolist() for k, v in weights.items()})
+        FloatMap = getattr(self._module, "FloatMap")
+        FloatVector = getattr(self._module, "FloatVector")
+        W = FloatMap()
+        for k, v in weights.items():
+            W[k] = FloatVector(v.ravel().tolist())
+        self.model.set_weights(W)
 
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
+        FloatVector = getattr(self._module, "FloatVector")
         return torch.tensor(
-            self.model.forward(x.ravel().tolist()), dtype=x.dtype, device=x.device
+            list(self.model.forward(FloatVector(x.ravel().tolist()))), dtype=x.dtype, device=x.device
         ).view(*self.model.output_shape())
+
+
+def get_dependency(dependency: Dependency, build_dir: Path) -> None:
+    LOGGER.info(f"Getting dependency {dependency}")
+    cache = CACHE_DIR / dependency
+    if cache.exists() and cache.is_dir():
+        LOGGER.info(f"{dependency} found in cache. Pulling, then copying...")
+        git.Repo(cache).remotes.origin.pull()
+        shutil.copytree(
+            str(cache),
+            str(build_dir / dependency),
+        )
+        return
+    LOGGER.info(f"{dependency} not in cache. Cloning into cache...")
+    git.Repo.clone_from(REPOS[dependency], cache)
+    get_dependency(dependency, build_dir)
 
 
 class Conversion(pydantic.BaseModel):
@@ -167,10 +206,11 @@ class Conversion(pydantic.BaseModel):
     )
 
     def build(self, path: Path | str) -> None:
+        LOGGER.info(f"Building in {path}")
         path = Path(path)
         path.mkdir(exist_ok=True, parents=True)
-        git.Repo.clone_from(GGML_REPO, path / "ggml")
-        git.Repo.clone_from(PYBIND11_REPO, path / "pybind11")
+        get_dependency("ggml", path)
+        get_dependency("pybind11", path)
         (path / "main.cpp").write_text(self.main)
         (path / "CMakeLists.txt").write_text(self.cmakelists)
         build_dir = path / "build"
@@ -193,7 +233,6 @@ class Conversion(pydantic.BaseModel):
                 set_weights=generate_set_weights(model),
                 model_name=name,
                 output_shape=", ".join(str(d.dim_value) for d in model.graph.output[0].type.tensor_type.shape.dim),
-                output_ndim=len(model.graph.output[0].type.tensor_type.shape.dim),
                 camel_case_model_name=model_name
             ),
             cmakelists=templates.CMAKELISTS.format(

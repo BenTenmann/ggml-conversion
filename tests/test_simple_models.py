@@ -147,6 +147,69 @@ class MLP2(torch.nn.Module):
         return torch.randn(3, 5)
 
 
+class MLP3(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.layer1 = torch.nn.Linear(5, 5)
+        self.layer2 = torch.nn.Linear(5, 5)
+        self.activation = torch.nn.Tanh()
+
+    def forward(self, x):
+        return self.activation(self.layer2(self.activation(self.layer1(x))))
+
+    @classmethod
+    def get_dummy_input_tensor(cls):
+        return torch.randn(3, 5)
+
+
+class Transpose(torch.nn.Module):
+    def forward(self, x):
+        return x.T
+
+    @classmethod
+    def get_dummy_input_tensor(cls):
+        return torch.randn(3, 5)
+
+
+class Erf(torch.nn.Module):
+    def forward(self, x):
+        return torch.erf(x)
+
+    @classmethod
+    def get_dummy_input_tensor(cls):
+        return torch.randn(3, 5)
+
+
+class Reshape(torch.nn.Module):
+    def forward(self, x):
+        return x.reshape(-1)
+
+    @classmethod
+    def get_dummy_input_tensor(cls):
+        return torch.randn(3, 5)
+
+
+class ConstantOfShape(torch.nn.Module):
+    # TODO: we need to find a way to test this
+    # currently could not find a torch operation which would translate into ConstantOfShape
+    # without additional operators
+    def forward(self, x):
+        return x
+
+    @classmethod
+    def get_dummy_input_tensor(cls):
+        return torch.randn(2,)
+
+
+class Pow(torch.nn.Module):
+    def forward(self, x):
+        return torch.pow(x, 3)
+
+    @classmethod
+    def get_dummy_input_tensor(cls):
+        return torch.randn(3, 5)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def timestamp():
     yield time.strftime("%Y%m%d-%H%M%S")
@@ -163,6 +226,12 @@ MODELS = [
     LinearLayer,
     MLP,
     MLP2,
+    MLP3,
+    Transpose,
+    Erf,
+    Reshape,
+    ConstantOfShape,
+    Pow,
 ]
 
 
