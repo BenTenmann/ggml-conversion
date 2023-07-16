@@ -27,6 +27,31 @@ struct ggml_tensor * ggml_linear(
     return ggml_add(ctx, wx, ggml_repeat(ctx, ggml_reshape_2d(ctx, bias, bias->ne[0], 1), wx));
 }}
 
+void ggml_vec_eq_f32(const int n, float *out, const float *a, const float *b) {{
+    for (int i = 0; i < n; i++) {{
+        out[i] = a[i] == b[i] ? 1.0f : 0.0f;
+    }}
+}}
+
+struct ggml_tensor * ggml_equal(struct ggml_context *ctx, struct ggml_tensor *a, struct ggml_tensor *b) {{
+    return ggml_map_binary_f32(ctx, a, b, &ggml_vec_eq_f32);
+}}
+
+struct ggml_tensor * ggml_ones_like(struct ggml_context *ctx, struct ggml_tensor *a) {{
+    struct ggml_tensor *ones = ggml_dup_tensor(ctx, a);
+    ggml_set_f32(ones, 1.0f);
+    return ones;
+}}
+
+struct ggml_tensor * ggml_where(struct ggml_context *ctx, struct ggml_tensor *cond, struct ggml_tensor *a, struct ggml_tensor *b) {{
+    // p * a + (1 - p) * b
+    struct ggml_tensor *ones = ggml_ones_like(ctx, cond);
+    struct ggml_tensor *pa = ggml_mul(ctx, cond, a);
+    struct ggml_tensor *np = ggml_sub(ctx, ones, cond);
+    struct ggml_tensor *pb = ggml_mul(ctx, np, b);
+    return ggml_add(ctx, pa, pb);
+}}
+
 struct ggml_model {{
     {model_struct}
 }};

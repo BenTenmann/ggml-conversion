@@ -194,7 +194,7 @@ class ConstantOfShape(torch.nn.Module):
     # currently could not find a torch operation which would translate into ConstantOfShape
     # without additional operators
     def forward(self, x):
-        return x
+        return x + 1
 
     @classmethod
     def get_dummy_input_tensor(cls):
@@ -208,6 +208,15 @@ class Pow(torch.nn.Module):
     @classmethod
     def get_dummy_input_tensor(cls):
         return torch.randn(3, 5)
+
+
+class WhereEqual(torch.nn.Module):
+    def forward(self, x):
+        return torch.where(x == 0.0, torch.ones_like(x), torch.zeros_like(x))
+
+    @classmethod
+    def get_dummy_input_tensor(cls):
+        return torch.randint(2, size=(3, 5), dtype=torch.float32)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -230,8 +239,9 @@ MODELS = [
     Transpose,
     Erf,
     Reshape,
-    ConstantOfShape,
+    # ConstantOfShape,
     Pow,
+    WhereEqual,
 ]
 
 

@@ -34,7 +34,7 @@ Module implementations (to get to BERT):
 - [x] Constant
 - [ ] ConstantOfShape
 - [x] Div
-- [ ] Equal
+- [x] Equal
 - [x] Erf
 - [ ] Expand
 - [ ] Gather
@@ -49,4 +49,4 @@ Module implementations (to get to BERT):
 - [x] Sub
 - [x] Tanh
 - [x] Transpose
-- [ ] Where
+- [x] Where

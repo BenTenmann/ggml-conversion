@@ -1,4 +1,5 @@
 import abc
+import enum
 from dataclasses import dataclass
 from typing import Final
 
@@ -73,9 +74,30 @@ class Tensor:
         return int(np.prod(self.shape))
 
 
-def broadcast_binary_operation(a: Tensor, b: Tensor) -> tuple[str, str]:
+class BroadcastTensor(enum.Enum):
+    A = "a"
+    B = "b"
+    NONE = "none"
+
+
+@dataclass
+class BroadcastOp:
+    a: str
+    b: str
+    broadcast_tensor: BroadcastTensor
+
+    @property
+    def broadcast(self) -> str | None:
+        if self.broadcast_tensor == BroadcastTensor.A:
+            return self.a
+        if self.broadcast_tensor == BroadcastTensor.B:
+            return self.b
+        return None
+
+
+def broadcast_binary_operation(a: Tensor, b: Tensor) -> BroadcastOp:
     if a.shape == b.shape:
-        return a.name, b.name
+        return BroadcastOp(a.name, b.name, BroadcastTensor.NONE)
     a_shape = a.ggml_shape
     b_shape = b.ggml_shape
     if a.ndim != b.ndim:
@@ -84,11 +106,27 @@ def broadcast_binary_operation(a: Tensor, b: Tensor) -> tuple[str, str]:
         dims = ', '.join(str(dim) for dim in min_shape + (1,) * dim_diff)
         if a.ndim > b.ndim:
             # TODO: check if this is correct
-            return a.name, f"ggml_repeat(ctx, ggml_reshape_{a.ndim}d(ctx, {b.name}, {dims}), {a.name})"
-        return f"ggml_repeat(ctx, ggml_reshape_{b.ndim}d(ctx, {a.name}, {dims}), {b.name})", b.name
+            return BroadcastOp(
+                a.name,
+                f"ggml_repeat(ctx, ggml_reshape_{a.ndim}d(ctx, {b.name}, {dims}), {a.name})",
+                BroadcastTensor.B
+            )
+        return BroadcastOp(
+            f"ggml_repeat(ctx, ggml_reshape_{b.ndim}d(ctx, {a.name}, {dims}), {b.name})",
+            b.name,
+            BroadcastTensor.A
+        )
     if any(i > j for i, j in zip(a_shape, b_shape)):
-        return a.name, f"ggml_repeat(ctx, {b.name}, {a.name})"
-    return f"ggml_repeat(ctx, {a.name}, {b.name})", b.name
+        return BroadcastOp(
+            a.name,
+            f"ggml_repeat(ctx, {b.name}, {a.name})",
+            BroadcastTensor.B
+        )
+    return BroadcastOp(
+        f"ggml_repeat(ctx, {a.name}, {b.name})",
+        b.name,
+        BroadcastTensor.A
+    )
 
 
 def create_load_tensor_data_statement(name: str, data: bytes) -> str:
@@ -167,15 +205,15 @@ class Add(Module):
     def convert(self) -> str:
         input_0 = self.reformat_name(self.node.input[0])
         input_1 = self.reformat_name(self.node.input[1])
-        input_0, input_1 = broadcast_binary_operation(
+        broadcast = broadcast_binary_operation(
             self.tensors[input_0], self.tensors[input_1]
         )
         return (
             "struct ggml_tensor *{name} = ggml_add(ctx, {input_0}, {input_1});"
             .format(
                 name=self.reformat_name(self.node.output[0]),
-                input_0=input_0,
-                input_1=input_1,
+                input_0=broadcast.a,
+                input_1=broadcast.b,
             )
         )
 
@@ -184,15 +222,15 @@ class Sub(Module):
     def convert(self) -> str:
         input_0 = self.reformat_name(self.node.input[0])
         input_1 = self.reformat_name(self.node.input[1])
-        input_0, input_1 = broadcast_binary_operation(
+        broadcast = broadcast_binary_operation(
             self.tensors[input_0], self.tensors[input_1]
         )
         return (
             "struct ggml_tensor *{name} = ggml_sub(ctx, {input_0}, {input_1});"
             .format(
                 name=self.reformat_name(self.node.output[0]),
-                input_0=input_0,
-                input_1=input_1,
+                input_0=broadcast.a,
+                input_1=broadcast.b,
             )
         )
 
@@ -201,15 +239,15 @@ class Mul(Module):
     def convert(self) -> str:
         input_0 = self.reformat_name(self.node.input[0])
         input_1 = self.reformat_name(self.node.input[1])
-        input_0, input_1 = broadcast_binary_operation(
+        broadcast = broadcast_binary_operation(
             self.tensors[input_0], self.tensors[input_1]
         )
         return (
             "struct ggml_tensor *{name} = ggml_mul(ctx, {input_0}, {input_1});"
             .format(
                 name=self.reformat_name(self.node.output[0]),
-                input_0=input_0,
-                input_1=input_1,
+                input_0=broadcast.a,
+                input_1=broadcast.b,
             )
         )
 
@@ -218,15 +256,15 @@ class Div(Module):
     def convert(self) -> str:
         input_0 = self.reformat_name(self.node.input[0])
         input_1 = self.reformat_name(self.node.input[1])
-        input_0, input_1 = broadcast_binary_operation(
+        broadcast = broadcast_binary_operation(
             self.tensors[input_0], self.tensors[input_1]
         )
         return (
             "struct ggml_tensor *{name} = ggml_div(ctx, {input_0}, {input_1});"
             .format(
                 name=self.reformat_name(self.node.output[0]),
-                input_0=input_0,
-                input_1=input_1,
+                input_0=broadcast.a,
+                input_1=broadcast.b,
             )
         )
 
@@ -237,15 +275,15 @@ class Pow(Module):
     def convert(self) -> str:
         input_0 = self.reformat_name(self.node.input[0])
         input_1 = self.reformat_name(self.node.input[1])
-        input_0, input_1 = broadcast_binary_operation(
+        broadcast = broadcast_binary_operation(
             self.tensors[input_0], self.tensors[input_1]
         )
         return (
             "struct ggml_tensor *{name} = ggml_pow(ctx, {input_0}, {input_1});"
             .format(
                 name=self.reformat_name(self.node.output[0]),
-                input_0=input_0,
-                input_1=input_1,
+                input_0=broadcast.a,
+                input_1=broadcast.b,
             )
         )
 
@@ -386,6 +424,70 @@ class Reshape(Module):
         )
 
 
+class ReduceMean(Module):
+    def convert(self) -> str:
+        # TODO: support other axes
+        # currently this only does the mean over the rows
+        return (
+            "struct ggml_tensor *{name} = ggml_mean(ctx, {input});"
+            .format(
+                name=self.reformat_name(self.node.output[0]),
+                input=self.reformat_name(self.node.input[0]),
+            )
+        )
+
+
+class Equal(Module):
+    def convert(self) -> str:
+        input_0 = self.reformat_name(self.node.input[0])
+        input_1 = self.reformat_name(self.node.input[1])
+        broadcast = broadcast_binary_operation(
+            self.tensors[input_0], self.tensors[input_1]
+        )
+        return (
+            "struct ggml_tensor *{name} = ggml_equal(ctx, {input_0}, {input_1});"
+            .format(
+                name=self.reformat_name(self.node.output[0]),
+                input_0=broadcast.a,
+                input_1=broadcast.b,
+            )
+        )
+
+
+class Where(Module):
+    def convert(self) -> str:
+        input_0 = self.reformat_name(self.node.input[0])
+        input_1 = self.reformat_name(self.node.input[1])
+        input_2 = self.reformat_name(self.node.input[2])
+
+        broadcast = broadcast_binary_operation(
+            self.tensors[input_0], self.tensors[input_1]
+        )
+        broadcast2 = broadcast_binary_operation(
+            self.tensors[broadcast.broadcast or broadcast.a],
+            self.tensors[input_2]
+        )
+        return (
+            "struct ggml_tensor *{name} = ggml_where(ctx, {condition}, {x}, {y});"
+            .format(
+                name=self.reformat_name(self.node.output[0]),
+                condition=broadcast.a,
+                x=broadcast.b,
+                y=broadcast2.b,
+            )
+        )
+
+
+class Expand(Module):
+    # TODO: fix this
+    # real issue: GGML does not support runtime reshaping
+    # as a potential solution, we could recurse through the graph and find all the constant nodes and then compute the
+    # shape tensors at compile time
+    # this would be a lot of work, and more importantly, it would break if the shape tensor is not a constant
+    def convert(self) -> str:
+        raise NotImplementedError
+
+
 GGML_OPERATORS: dict[str, type[Module]] = {
     "Gemm": Linear,
     "Relu": ReLU,
@@ -404,4 +506,7 @@ GGML_OPERATORS: dict[str, type[Module]] = {
     "Transpose": Transpose,
     "Erf": Erf,
     "Reshape": Reshape,
+    # "ReduceMean": ReduceMean,
+    "Equal": Equal,
+    "Where": Where,
 }

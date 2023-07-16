@@ -15,7 +15,7 @@ clean:
 	rm -rf models/* || true
 
 test:
-	$(PYTHON) -m pytest -vv tests -k "test_model_builds[Pow]"
+	$(PYTHON) -m pytest -vv tests
 
 test_case:
 	cd dev/test-case && git clone https://github.com/ggerganov/ggml.git && mkdir build && cd build && cmake .. && make && ./torch_jit
