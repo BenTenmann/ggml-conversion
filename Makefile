@@ -21,8 +21,8 @@ test_case:
 	cd dev/test-case && git clone https://github.com/ggerganov/ggml.git && mkdir build && cd build && cmake .. && make && ./torch_jit
 
 measure_performance:
-	for num_blocks in 4 8 16 32; do \
-		for input_dim in 128 256 512 1024; do \
+	for num_blocks in 4 8 16 32 64; do \
+		for input_dim in 128 256 512 1024 2048; do \
 		  $(PYTHON) -m scripts.measure_performance --num-blocks $$num_blocks --input-dim $$input_dim; \
 		done; \
 	done
